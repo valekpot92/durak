@@ -1751,6 +1751,8 @@ const G = {
   peer: null,
   conn: null,
   isHost: false,
+  aiDefending: false,   // ★ AI сейчас отбивается
+  pendingAI: null,      // ★ таймер отбива AI, чтобы не задваивался
 };
 
 const myHand = () => G.hands[G.mySide];
@@ -1787,11 +1789,6 @@ function toast(msg, ms = 1800) {
   toast._t = setTimeout(() => toastEl.classList.remove('show'), ms);
 }
 
-/* ★★★ ГЛАВНОЕ ИСПРАВЛЕНИЕ ★★★
-   Функция, которая гарантированно прячет все стартовые окна.
-   Вызывается и при открытии соединения, и при получении любого
-   сетевого сообщения — это надёжно решает проблему с телефоном,
-   где conn.on('open') мог сработать раньше/позже, чем нужно. */
 function hideStartOverlays() {
   menuOverlay.classList.add('hidden');
   hostOverlay.classList.add('hidden');
@@ -1917,21 +1914,22 @@ function renderControls() {
   btnAction.disabled = true;
   btnSecondary.disabled = true;
   if (G.over || G.phase !== 'playing') return;
-  if (G.busy) return;
 
   if (iAmAttacker()) {
-    const tableNotEmpty = G.table.length > 0;
-    const allBeaten = tableNotEmpty && G.table.every(p => p.defend);
-    btnAction.textContent = tableNotEmpty ? 'Подкинуть' : 'Ходить';
+    // ★ Атакующий: всегда может кидать карты, пока AI не взял карты
+    // и пока есть карты нужного достоинства (или стол пуст).
+    const allBeaten = G.table.length > 0 && G.table.every(p => p.defend);
+    btnAction.textContent = G.table.length > 0 ? 'Подкинуть' : 'Ходить';
     btnAction.disabled = false;
     btnSecondary.textContent = 'Бито';
-    btnSecondary.disabled = !allBeaten;
+    btnSecondary.disabled = !allBeaten || G.aiDefending;
   } else {
+    // Защитник — здесь всё как раньше
     const hasUndefended = G.table.some(p => !p.defend);
     btnAction.textContent = 'Бить';
-    btnAction.disabled = !hasUndefended;
+    btnAction.disabled = !hasUndefended || G.busy;
     btnSecondary.textContent = 'Взять';
-    btnSecondary.disabled = !hasUndefended;
+    btnSecondary.disabled = !hasUndefended || G.busy;
   }
 }
 
@@ -1946,17 +1944,18 @@ function renderStatus() {
     turnHintEl.textContent = '';
     return;
   }
-  if (G.busy) {
-    turnHintEl.textContent = 'Соперник думает…';
-    statusEl.textContent = '';
-    return;
-  }
 
   if (iAmAttacker()) {
     turnHintEl.textContent = '⚔ Ваш ход — вы атакуете';
-    if (G.table.length === 0) statusEl.textContent = 'Выберите карту, чтобы начать ход.';
-    else if (G.table.every(p => p.defend)) statusEl.textContent = 'Соперник отбился. Подкиньте ещё или нажмите «Бито».';
-    else statusEl.textContent = 'Ждём соперника…';
+    if (G.table.length === 0) {
+      statusEl.textContent = 'Выберите карту, чтобы начать ход.';
+    } else if (G.aiDefending) {
+      statusEl.textContent = 'Соперник отбивается…';
+    } else if (G.table.every(p => p.defend)) {
+      statusEl.textContent = 'Соперник отбился. Подкиньте ещё или нажмите «Бито».';
+    } else {
+      statusEl.textContent = 'Ждём соперника…';
+    }
   } else {
     turnHintEl.textContent = '🛡 Соперник атакует';
     const undef = G.table.find(p => !p.defend);
@@ -1981,6 +1980,8 @@ function newGame(firstAttacker = 'player') {
   G.busy = false;
   G.over = false;
   G.winner = null;
+  G.aiDefending = false;
+  if (G.pendingAI) { clearTimeout(G.pendingAI); G.pendingAI = null; }
   Sound.shuffle();
   render();
   if (G.mode === 'solo' && G.attacker === 'ai') scheduleAIAttack();
@@ -1997,14 +1998,15 @@ function addToHand(side, cards) {
 }
 
 function onMyCardClick(card) {
-  if (G.over || G.phase !== 'playing' || G.busy) return;
+  if (G.over || G.phase !== 'playing') return;
+  if (iAmDefender() && G.busy) return;
 
   if (iAmAttacker()) {
     if (G.table.length === 0) {
       playerAttack(card);
     } else {
       if (!canAddToTable(card)) {
-        toast('Подкидывать можно только карты того же достоинства');
+        toast('Подкидывать можно только карты того достоинства, что на столе');
         return;
       }
       playerAttack(card);
@@ -2027,6 +2029,7 @@ function canAddToTable(card) {
   return ranks.has(card.r);
 }
 
+/* ★★★ ИЗМЕНЕНО: атакующий может подкидывать без ожидания AI ★★★ */
 function playerAttack(card) {
   removeFromHand(G.mySide, card);
   G.table.push({ attack: card, defend: null });
@@ -2035,16 +2038,81 @@ function playerAttack(card) {
   netSend({ type: 'attack', card, side: G.mySide });
 
   if (G.mode === 'solo') {
-    G.busy = true;
-    render();
-    setTimeout(() => {
-      G.busy = false;
-      aiDefendOrTake();
-    }, 600);
+    // Планируем отбив AI через короткую паузу, но интерфейс НЕ блокируем.
+    scheduleAIDefend();
   } else {
+    // В сети после своего хода просто ждём ответа — снимать busy будем,
+    // когда придёт 'defend'/'take'/'attack' от соперника.
     G.busy = true;
     render();
   }
+}
+
+/* ★ Планирует отбив AI от ОДНОЙ неотбитой карты. Не блокирует UI. */
+function scheduleAIDefend() {
+  if (G.mode !== 'solo') return;
+  if (G.aiDefending) return; // уже идёт отбив
+  G.aiDefending = true;
+  render();
+
+  G.pendingAI = setTimeout(() => {
+    G.pendingAI = null;
+    if (G.over) return;
+
+    const undef = G.table.find(p => !p.defend);
+    if (!undef) {
+      // Нечего отбивать — возможно, атакующий (игрок) ещё не нажал «Бито»
+      G.aiDefending = false;
+      render();
+      return;
+    }
+
+    const candidates = G.hands.ai.filter(c => beats(c, undef.attack, G.trump));
+    if (candidates.length === 0) {
+      // AI берёт все карты со стола
+      const all = [];
+      for (const p of G.table) {
+        all.push(p.attack);
+        if (p.defend) all.push(p.defend);
+      }
+      addToHand('ai', all);
+      G.table = [];
+      Sound.take();
+      G.aiDefending = false;
+      render();
+
+      const nextAttacker = G.attacker;
+      G.busy = true;
+      setTimeout(() => {
+        G.busy = false;
+        refillHands();
+        if (checkEnd()) return;
+        G.attacker = nextAttacker;
+        render();
+        if (G.mode === 'solo' && G.attacker === 'ai') scheduleAIAttack();
+      }, 700);
+      return;
+    }
+
+    // AI выбирает карту
+    candidates.sort((a, b) => {
+      const ta = a.s === G.trump ? 1 : 0;
+      const tb = b.s === G.trump ? 1 : 0;
+      if (ta !== tb) return ta - tb;
+      return a.v - b.v;
+    });
+    const card = candidates[0];
+    undef.defend = card;
+    removeFromHand('ai', card);
+    Sound.beat();
+    G.aiDefending = false;
+    render();
+
+    // Если остались ещё неотбитые карты — запускаем следующий отбив
+    if (G.table.some(p => !p.defend)) {
+      scheduleAIDefend();
+    }
+  }, 550);
 }
 
 function playerDefend(card, pair) {
@@ -2069,6 +2137,7 @@ function playerDefend(card, pair) {
 
 function playerPass() {
   if (!(G.table.length > 0 && G.table.every(p => p.defend))) return;
+  if (G.aiDefending) { toast('Соперник ещё отбивается…'); return; }
   Sound.play();
   netSend({ type: 'pass', side: G.mySide });
   const prevAttacker = G.attacker;
@@ -2134,52 +2203,7 @@ function checkEnd() {
   return false;
 }
 
-/* ═══════════════ AI ═══════════════ */
-function aiDefendOrTake() {
-  if (G.over || G.mode !== 'solo') return;
-  if (G.attacker === 'ai') return;
-  const undef = G.table.find(p => !p.defend);
-  if (!undef) { aiAttackerDecision(); return; }
-
-  const candidates = G.hands.ai.filter(c => beats(c, undef.attack, G.trump));
-  if (candidates.length === 0) {
-    const all = [];
-    for (const p of G.table) {
-      all.push(p.attack);
-      if (p.defend) all.push(p.defend);
-    }
-    addToHand('ai', all);
-    G.table = [];
-    Sound.take();
-    render();
-    netSend({ type: 'take', side: 'ai' });
-
-    const nextAttacker = G.attacker;
-    G.busy = true;
-    setTimeout(() => {
-      G.busy = false;
-      refillHands();
-      if (checkEnd()) return;
-      G.attacker = nextAttacker;
-      render();
-      if (G.mode === 'solo' && G.attacker === 'ai') scheduleAIAttack();
-    }, 700);
-    return;
-  }
-
-  candidates.sort((a, b) => {
-    const ta = a.s === G.trump ? 1 : 0;
-    const tb = b.s === G.trump ? 1 : 0;
-    if (ta !== tb) return ta - tb;
-    return a.v - b.v;
-  });
-  const card = candidates[0];
-  undef.defend = card;
-  removeFromHand('ai', card);
-  Sound.beat();
-  render();
-}
-
+/* ═══════════════ AI-АТАКУЮЩИЙ ═══════════════ */
 function aiAttackerDecision() {
   if (G.over || G.mode !== 'solo') return;
   if (G.attacker !== 'ai') return;
@@ -2244,7 +2268,7 @@ function scheduleAIAttack() {
 /* ═══════════════ КНОПКИ ═══════════════ */
 btnAction.addEventListener('click', () => {
   Sound.click();
-  if (G.over || G.phase !== 'playing' || G.busy) return;
+  if (G.over || G.phase !== 'playing') return;
   if (iAmAttacker()) {
     if (G.table.length === 0) toast('Выберите карту для атаки');
     else toast('Выберите карту того же достоинства для подкидывания');
@@ -2275,10 +2299,6 @@ function netSend(msg) {
 
 function netApplyRemote(msg) {
   if (!msg || !msg.type) return;
-
-  /* ★★★ Прячем окна при ЛЮБОМ входящем сообщении ★★★
-     Это самое надёжное место: если соединение живо и данные идут,
-     значит игра началась — окна не нужны. */
   hideStartOverlays();
 
   const other = G.mySide === 'player' ? 'ai' : 'player';
@@ -2294,6 +2314,7 @@ function netApplyRemote(msg) {
       G.phase = 'playing';
       G.over = false;
       G.busy = false;
+      G.aiDefending = false;
       render();
       break;
     }
@@ -2361,7 +2382,6 @@ function setupConn(conn) {
   G.conn = conn;
 
   conn.on('open', () => {
-    /* Прячем окна сразу при открытии соединения — и у хоста, и у гостя */
     hideStartOverlays();
 
     netSend({ type: 'hello' });
