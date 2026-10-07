@@ -251,29 +251,36 @@
     text-shadow: 0 1px 3px #000;
   }
 
+  /* ★ Козырь — теперь ТОЛЬКО значок масти, без карты */
   #trump-slot {
     position: relative;
     width: 44px;
     height: 62px;
-    margin-top: 6px;
-  }
-  #trump-slot .trump-card-big {
-    position: absolute;
-    inset: 0;
-    background: #fffdf7;
-    border-radius: 6px;
-    box-shadow: 0 3px 10px rgba(0,0,0,.6);
+    margin-top: 8px;
     display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    padding: 3px 4px;
-    font-weight: 800;
-    transform: rotate(90deg);
+    align-items: center;
+    justify-content: center;
   }
-  #trump-slot .trump-card-big .r { font-size: 14px; line-height: 1; }
-  #trump-slot .trump-card-big .s { font-size: 17px; line-height: 1; align-self: flex-end; }
-  #trump-slot .trump-card-big.red { color: #d3202a; }
-  #trump-slot .trump-card-big.black { color: #1a2238; }
+  #trump-slot .trump-suit-badge {
+    width: 100%;
+    height: 100%;
+    border-radius: 12px;
+    background:
+      radial-gradient(circle at 50% 35%, rgba(255,255,255,.10), transparent 60%),
+      linear-gradient(180deg, rgba(30,10,6,.95), rgba(10,3,2,.95));
+    border: 1px solid rgba(200,150,90,.45);
+    box-shadow:
+      0 4px 12px rgba(0,0,0,.7),
+      inset 0 1px 0 rgba(255,220,170,.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+    line-height: 1;
+    font-weight: 700;
+  }
+  #trump-slot .trump-suit-badge.red   { color: #e23a44; text-shadow: 0 0 10px rgba(226,58,68,.55); }
+  #trump-slot .trump-suit-badge.black { color: #e8dcc8; text-shadow: 0 0 10px rgba(232,220,200,.35); }
   #trump-label {
     font-size: 10px;
     opacity: .8;
@@ -566,8 +573,7 @@
     #deck-pile { width: 34px; height: 50px; }
     #deck-pile .card-back { width: 34px; height: 50px; border-radius: 5px; }
     #trump-slot { width: 38px; height: 54px; }
-    #trump-slot .trump-card-big .r { font-size: 12px; }
-    #trump-slot .trump-card-big .s { font-size: 14px; }
+    #trump-slot .trump-suit-badge { font-size: 26px; }
     .card-back { width: 24px; height: 36px; margin-left: -11px; }
   }
   @media (min-width: 361px) and (max-width: 400px) {
@@ -599,8 +605,7 @@
     #deck-pile { width: 62px; height: 90px; }
     #deck-pile .card-back { width: 62px; height: 90px; border-radius: 8px; }
     #trump-slot { width: 66px; height: 94px; }
-    #trump-slot .trump-card-big .r { font-size: 18px; }
-    #trump-slot .trump-card-big .s { font-size: 22px; }
+    #trump-slot .trump-suit-badge { font-size: 46px; border-radius: 16px; }
     .card-back { width: 40px; height: 58px; margin-left: -20px; }
   }
   @media (min-width: 1100px) {
@@ -838,9 +843,15 @@ body::before {
   text-shadow: 0 2px 6px #000;
 }
 
-#trump-slot .trump-card-big {
-  background: #f5eee0;
-  box-shadow: 0 6px 18px rgba(0,0,0,.72);
+/* ★ Козырь — только значок масти */
+#trump-slot .trump-suit-badge {
+  background:
+    radial-gradient(circle at 50% 30%, rgba(255,200,120,.12), transparent 60%),
+    linear-gradient(180deg, #2a0b06, #120403);
+  border: 1px solid rgba(200,150,90,.55);
+  box-shadow:
+    0 6px 18px rgba(0,0,0,.75),
+    inset 0 1px 0 rgba(255,220,170,.10);
 }
 
 .night-candle {
@@ -1651,9 +1662,7 @@ function beats(def, atk, trump) {
   return false;
 }
 
-/* ★ Определяет, кто ходит первым по младшему козырю.
-   Возвращает 'player' или 'ai'.
-   Если у обоих нет козырей — возвращает fallback (по умолчанию 'player'). */
+/* Определяет, кто ходит первым по младшему козырю */
 function determineFirstAttacker(handPlayer, handAI, trump, fallback = 'player') {
   let minP = Infinity, minA = Infinity;
   for (const c of handPlayer) if (c.s === trump && c.v < minP) minP = c.v;
@@ -1913,15 +1922,15 @@ function renderPlayerHand() {
   requestAnimationFrame(() => recalcHandOverlap(hand.length));
 }
 
+/* ★ Козырь: только значок масти, без карты */
 function renderDeckAndTrump() {
   deckCountEl.textContent = G.deck.length;
   trumpSlot.innerHTML = '';
-  if (G.trumpCard) {
-    const c = G.trumpCard;
-    const el = document.createElement('div');
-    el.className = 'trump-card-big ' + (isRed(c.s) ? 'red' : 'black');
-    el.innerHTML = `<div class="r">${c.r}</div><div class="s">${c.s}</div>`;
-    trumpSlot.appendChild(el);
+  if (G.trump) {
+    const badge = document.createElement('div');
+    badge.className = 'trump-suit-badge ' + (isRed(G.trump) ? 'red' : 'black');
+    badge.textContent = G.trump;
+    trumpSlot.appendChild(badge);
   }
 }
 
@@ -1978,8 +1987,6 @@ function renderStatus() {
 }
 
 /* ═══════════════ ИГРОВАЯ ЛОГИКА ═══════════════ */
-/* ★ newGame() больше не принимает firstAttacker — он вычисляется
-   автоматически по младшему козырю. */
 function newGame() {
   G.deck = buildDeck();
   G.trumpCard = G.deck[G.deck.length - 1];
@@ -1990,7 +1997,6 @@ function newGame() {
     G.hands.ai.push(G.deck.pop());
   }
   G.table = [];
-  /* ★ Определяем первого атакующего по младшему козырю */
   G.attacker = determineFirstAttacker(G.hands.player, G.hands.ai, G.trump, 'player');
   G.phase = 'playing';
   G.busy = false;
@@ -2002,7 +2008,6 @@ function newGame() {
   Sound.shuffle();
   render();
 
-  /* ★ Сообщаем игроку, кто ходит первым */
   const firstMsg = G.attacker === G.mySide
     ? 'У вас младший козырь — ваш ход!'
     : 'У соперника младший козырь — он ходит первым.';
@@ -2334,7 +2339,6 @@ function netApplyRemote(msg) {
       G.aiThinking = false;
       render();
 
-      /* ★ Сообщаем гостю, кто ходит первым */
       const firstMsg = G.attacker === G.mySide
         ? 'У вас младший козырь — ваш ход!'
         : 'У соперника младший козырь — он ходит первым.';
@@ -2409,7 +2413,6 @@ function setupConn(conn) {
 
     netSend({ type: 'hello' });
     if (G.isHost) {
-      /* ★ Хост создаёт игру — newGame сам определит первого атакующего */
       newGame();
       setTimeout(() => {
         netSend({
@@ -2503,7 +2506,6 @@ $('#m-solo').addEventListener('click', () => {
   G.mode = 'solo';
   G.mySide = 'player';
   roleLabel.textContent = 'Игра против компьютера';
-  /* ★ Больше не бросаем монетку — первый ход по младшему козырю */
   newGame();
 });
 
@@ -2551,7 +2553,6 @@ $('#result-again').addEventListener('click', () => {
   Sound.click();
   resultOverlay.classList.add('hidden');
   if (G.mode === 'solo') {
-    /* ★ Снова определяем первого по младшему козырю */
     newGame();
   } else {
     location.reload();
