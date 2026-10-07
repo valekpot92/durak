@@ -7,11 +7,9 @@
 <title>Дурак — Подкидной</title>
 <style>
   :root {
-    /* Базовые размеры карт — переопределяются в медиа-запросах */
     --card-w: 60px;
     --card-h: 88px;
     --card-r: 8px;
-    /* Перекрытие карт в руке — управляется из JS */
     --hand-overlap: -20px;
     --gold: #f5b942;
     --text: #f7ecd8;
@@ -39,7 +37,6 @@
   }
   button { font-family: inherit; }
 
-  /* ═══════════════ Фон: деревня ═══════════════ */
   #scene {
     position: fixed;
     inset: 0;
@@ -61,7 +58,6 @@
   .cloud { animation: cloudDrift 24s ease-in-out infinite alternate; }
   .cloud.c2 { animation-duration: 32s; animation-delay: -8s; }
 
-  /* ═══════════════ Каркас интерфейса ═══════════════ */
   #app {
     position: fixed;
     inset: 0;
@@ -73,7 +69,6 @@
   }
   #app > * { pointer-events: auto; }
 
-  /* ─── Верхняя панель ─── */
   #topbar {
     flex: 0 0 auto;
     display: flex;
@@ -98,7 +93,6 @@
   }
   #sound-toggle { cursor: pointer; }
 
-  /* ─── Соперник ─── */
   #opp-area {
     flex: 0 0 auto;
     display: flex;
@@ -144,7 +138,6 @@
     white-space: nowrap;
   }
 
-  /* ─── Деревянный стол ─── */
   #table-zone {
     flex: 1 1 auto;
     margin: 4px 6px;
@@ -226,7 +219,6 @@
     100% { opacity: .85; transform: scale(1); }
   }
 
-  /* ─── Колода + козырь ─── */
   #deck-wrap {
     position: absolute;
     right: 8px;
@@ -290,7 +282,6 @@
     margin-top: -6px;
   }
 
-  /* ─── Рука игрока ─── */
   #player-area {
     flex: 0 0 auto;
     padding: 4px 4px 6px;
@@ -303,7 +294,6 @@
     padding: 2px 8px;
     min-height: calc(var(--card-h) + 14px);
     overflow: hidden;
-    /* перекрытие задаётся через --hand-overlap */
   }
   #player-hand .card {
     margin-left: var(--hand-overlap, -20px);
@@ -312,7 +302,6 @@
   }
   #player-hand .card:first-child { margin-left: 0; }
 
-  /* ─── Кнопки управления ─── */
   #controls {
     display: flex;
     justify-content: center;
@@ -353,10 +342,6 @@
     min-height: 14px;
   }
 
-  /* ═══════════════ Карты ═══════════════
-     container-type: size → дети могут использовать cqw
-     (1 cqw = 1% ширины карты). Значки масштабируются
-     пропорционально и не выходят за границы. */
   .card {
     container-type: size;
     container-name: card;
@@ -378,7 +363,6 @@
     pointer-events: none;
   }
 
-  /* Уголки */
   .card .corner {
     position: absolute;
     display: flex;
@@ -393,7 +377,6 @@
   .card .corner .r { font-size: 26cqw; letter-spacing: -.5px; }
   .card .corner .s { font-size: 24cqw; margin-top: 2cqw; }
 
-  /* Пипсы для числовых карт */
   .card .pips {
     position: absolute;
     left: 22%;
@@ -406,7 +389,6 @@
   }
   .card .pips .big-suit { font-size: 62cqw; opacity: .92; line-height: 1; }
 
-  /* Крупный полупрозрачный символ по центру числовых карт */
   .card .pip-big {
     position: absolute;
     inset: 0;
@@ -420,7 +402,6 @@
     font-weight: 700;
   }
 
-  /* Фигурные карты */
   .card.face .corner .r { font-size: 22cqw; }
   .card.face .corner .s { font-size: 20cqw; }
   .card .face-art {
@@ -471,13 +452,11 @@
   .card.clickable { cursor: pointer; }
   .card.clickable:active { transform: translateY(-6px) scale(.97); }
 
-  /* Маленькие карты на столе — просто меньше сама карта */
   .card.small {
     --card-w: 52px;
     --card-h: 76px;
   }
 
-  /* ═══════════════ Оверлеи ═══════════════ */
   .overlay {
     position: fixed;
     inset: 0;
@@ -576,10 +555,6 @@
   }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-  /* ═══════════════ Адаптив ═══════════════
-     Меняем ТОЛЬКО --card-w и --card-h.
-     Все значки внутри карты автоматически пересчитываются.
-     Перекрытие в руке управляется из JS. */
   @media (max-width: 360px) {
     :root { --card-w: 52px; --card-h: 76px; }
     .card.small { --card-w: 46px; --card-h: 68px; }
@@ -637,18 +612,12 @@
     .card.small { --card-w: 46px; --card-h: 68px; }
   }
 
-  /* Ночью колода всегда остаётся между свечами */
   @media (max-width: 700px) {
     #deck-wrap { top: 12%; }
     #battlefield { max-width: calc(100% - 120px); }
     .night-candle.left { left: 4px; }
     .night-candle.right { right: 4px; }
   }
-
-/* ═══════════════════════════════════════════════════════════════
-   NIGHT VELVET THEME — visual-only override
-   Игровая логика, DOM игровых элементов и PeerJS не изменяются.
-   ═══════════════════════════════════════════════════════════════ */
 
 :root {
   --card-w: 60px;
@@ -678,24 +647,20 @@ body::before {
     linear-gradient(180deg, rgba(0,0,0,.88) 0%, rgba(0,0,0,.12) 28%, rgba(0,0,0,.18) 72%, rgba(0,0,0,.92) 100%);
 }
 
-/* Убираем старую деревню полностью */
 #scene {
   display: none !important;
 }
 
-/* Главный игровой слой */
 #app {
   z-index: 2;
   padding: 0;
   background: transparent;
 }
 
-/* В референсе нет отдельной верхней панели */
 #topbar {
   display: none !important;
 }
 
-/* Верхняя зона — только имя соперника и его карты */
 #opp-area {
   position: absolute;
   left: 0;
@@ -777,7 +742,6 @@ body::before {
   color: #e5c9a0;
 }
 
-/* Красный бархат вместо дерева */
 #table-zone {
   position: absolute;
   inset: 0;
@@ -803,7 +767,6 @@ body::before {
   z-index: 1;
 }
 
-/* Бархатные волокна / мягкие складки */
 #table-zone::before {
   content: '';
   position: absolute;
@@ -836,13 +799,11 @@ body::before {
   z-index: 0;
 }
 
-/* Поле игры поверх бархата */
 #battlefield {
   z-index: 5;
   transform: translateY(-1%);
 }
 
-/* Колода и козырь — строго между свечами, сверху по центру */
 #deck-wrap {
   left: 50%;
   right: auto;
@@ -852,7 +813,6 @@ body::before {
   filter: drop-shadow(0 10px 16px rgba(0,0,0,.78));
 }
 
-/* Вся игровая зона остаётся внутри светового коридора между свечами */
 #battlefield {
   width: min(62vw, 820px);
   max-width: calc(100% - 220px);
@@ -883,7 +843,6 @@ body::before {
   box-shadow: 0 6px 18px rgba(0,0,0,.72);
 }
 
-/* Свечи */
 .night-candle {
   position: absolute;
   top: 47%;
@@ -1029,7 +988,6 @@ body::before {
   100% { opacity: .68; transform: translate(-50%, -42%) scale(.98); }
 }
 
-/* Более плавное, живое пламя и выраженный 3D-объём свечи */
 .night-candle {
   perspective: 500px;
   filter: drop-shadow(0 14px 18px rgba(0,0,0,.62));
@@ -1066,7 +1024,6 @@ body::before {
   animation: candleGlow 3.2s ease-in-out infinite;
 }
 
-/* Карты получили настоящую глубину: контактная тень + мягкий объём */
 .card {
   transform-style: preserve-3d;
   box-shadow:
@@ -1084,7 +1041,6 @@ body::before {
   transform: translateY(-14px) perspective(700px) rotateX(1deg) scale(1.015);
 }
 
-/* Контактная тень под парами карт делает раскладку визуально 3D */
 .pair::after {
   content: '';
   position: absolute;
@@ -1099,7 +1055,6 @@ body::before {
   pointer-events: none;
 }
 
-/* Карты — кремовая бумага, тёплые края как в референсе */
 .card {
   background:
     linear-gradient(135deg, rgba(255,255,255,.95), rgba(245,237,220,.98)),
@@ -1121,7 +1076,6 @@ body::before {
     0 0 24px rgba(255,188,93,.58);
 }
 
-/* Рука игрока */
 #player-area {
   position: absolute;
   left: 0;
@@ -1200,7 +1154,6 @@ body::before {
   opacity: .82;
 }
 
-/* Оверлеи сохраняют всю функциональность, но вписываются в ночной стиль */
 .overlay {
   background: rgba(0,0,0,.82);
   backdrop-filter: blur(10px);
@@ -1233,7 +1186,6 @@ body::before {
   color: #ead7bc;
 }
 
-/* На узких экранах свечи не перекрывают карты */
 @media (max-width: 600px) {
   .night-candle {
     top: 45%;
@@ -1266,7 +1218,6 @@ body::before {
 </head>
 <body>
 
-<!-- ═══════════════ Фон: деревня ═══════════════ -->
 <div id="scene">
 <svg viewBox="0 0 800 600" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -1433,7 +1384,6 @@ body::before {
 </svg>
 </div>
 
-<!-- ═══════════════ Игра ═══════════════ -->
 <div id="app">
   <div id="topbar">
     <div class="badge" id="role-label">Игра против компьютера</div>
@@ -1477,7 +1427,6 @@ body::before {
   </div>
 </div>
 
-<!-- Меню -->
 <div class="overlay" id="menu-overlay">
   <div class="modal">
     <h2>🃏 Дурак — Подкидной</h2>
@@ -1534,9 +1483,6 @@ body::before {
 (() => {
 'use strict';
 
-/* ═══════════════════════════════════════════════════════════════
-   ЗВУК — Web Audio API
-   ═══════════════════════════════════════════════════════════════ */
 const Sound = (() => {
   let ctx = null, master = null, enabled = true;
 
@@ -1664,9 +1610,6 @@ const Sound = (() => {
   };
 })();
 
-/* ═══════════════════════════════════════════════════════════════
-   КОЛОДА / УТИЛИТЫ
-   ═══════════════════════════════════════════════════════════════ */
 const SUITS = ['♠', '♥', '♦', '♣'];
 const RANKS = ['6', '7', '8', '9', '10', 'В', 'Д', 'К', 'А'];
 const RED = new Set(['♥', '♦']);
@@ -1706,9 +1649,6 @@ function beats(def, atk, trump) {
   return false;
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   СОЗДАНИЕ ЭЛЕМЕНТА КАРТЫ
-   ═══════════════════════════════════════════════════════════════ */
 function cardEl(card, { small = false, clickable = false } = {}) {
   const el = document.createElement('div');
   el.className = 'card ' + (isRed(card.s) ? 'red' : 'black') + (small ? ' small' : '');
@@ -1737,13 +1677,11 @@ function cardEl(card, { small = false, clickable = false } = {}) {
     pips.innerHTML = `<div class="big-suit">${card.s}</div>`;
     el.appendChild(pips);
   } else {
-    // Крупный полупрозрачный символ по центру
     const big = document.createElement('div');
     big.className = 'pip-big';
     big.textContent = card.s;
     el.appendChild(big);
 
-    // Классическая раскладка пипсов
     const n = parseInt(card.r, 10);
     const layout = pipLayout(n);
     const pips = document.createElement('div');
@@ -1792,9 +1730,6 @@ function cardBackEl(w = 28, h = 42) {
   return el;
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   СОСТОЯНИЕ ИГРЫ
-   ═══════════════════════════════════════════════════════════════ */
 const G = {
   mode: 'solo',
   mySide: 'player',
@@ -1820,9 +1755,6 @@ const defenderSide = () => (G.attacker === 'player' ? 'ai' : 'player');
 const iAmAttacker = () => G.attacker === G.mySide;
 const iAmDefender = () => G.attacker !== G.mySide;
 
-/* ═══════════════════════════════════════════════════════════════
-   DOM
-   ═══════════════════════════════════════════════════════════════ */
 const $ = s => document.querySelector(s);
 const oppHandEl    = $('#opp-hand');
 const oppCountEl   = $('#opp-count');
@@ -1850,22 +1782,16 @@ function toast(msg, ms = 1800) {
   toast._t = setTimeout(() => toastEl.classList.remove('show'), ms);
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   ПЕРЕСЧЁТ ПЕРЕКРЫТИЯ КАРТ В РУКЕ
-   Гарантирует, что все карты помещаются на экране.
-   ═══════════════════════════════════════════════════════════════ */
 function recalcHandOverlap(count) {
-  const MIN_VISIBLE = 18;  // минимальная видимая часть карты (px)
-  const MAX_OVERLAP_RATIO = 0.78; // максимум перекрытия от ширины карты
+  const MIN_VISIBLE = 18;
+  const MAX_OVERLAP_RATIO = 0.78;
 
   if (count <= 0) return;
 
-  // Читаем актуальную ширину карты из CSS
   const cardW = parseFloat(
     getComputedStyle(document.documentElement).getPropertyValue('--card-w')
   ) || 60;
 
-  // Ширина контейнера руки минус внутренние отступы (16px: по 8 с каждой стороны)
   const availW = playerHandEl.clientWidth - 16;
   if (availW <= 0) return;
 
@@ -1874,17 +1800,13 @@ function recalcHandOverlap(count) {
     return;
   }
 
-  // Проверяем, помещаются ли карты без перекрытия
   if (cardW * count <= availW) {
     document.documentElement.style.setProperty('--hand-overlap', '0px');
     return;
   }
 
-  // Иначе считаем видимую ширину каждой карты так, чтобы всё уместилось:
-  // visW * (count - 1) + cardW = availW
   let visW = (availW - cardW) / (count - 1);
 
-  // Ограничения:
   const minW = MIN_VISIBLE;
   const maxW = cardW * MAX_OVERLAP_RATIO;
   visW = Math.max(minW, Math.min(maxW, visW));
@@ -1893,7 +1815,6 @@ function recalcHandOverlap(count) {
   document.documentElement.style.setProperty('--hand-overlap', overlapPx + 'px');
 }
 
-// Пересчёт при ресайзе/повороте
 let resizeTimer = null;
 function onResize() {
   clearTimeout(resizeTimer);
@@ -1904,9 +1825,6 @@ function onResize() {
 window.addEventListener('resize', onResize);
 window.addEventListener('orientationchange', onResize);
 
-/* ═══════════════════════════════════════════════════════════════
-   RENDER
-   ═══════════════════════════════════════════════════════════════ */
 function render() {
   renderOpponent();
   renderTable();
@@ -1963,7 +1881,6 @@ function renderPlayerHand() {
     playerHandEl.appendChild(el);
   }
 
-  // Пересчитываем перекрытие после вставки карт в DOM
   requestAnimationFrame(() => recalcHandOverlap(hand.length));
 }
 
@@ -2031,9 +1948,6 @@ function renderStatus() {
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   ЛОГИКА ИГРЫ
-   ═══════════════════════════════════════════════════════════════ */
 function newGame(firstAttacker = 'player') {
   G.deck = buildDeck();
   G.trumpCard = G.deck[G.deck.length - 1];
@@ -2202,9 +2116,6 @@ function checkEnd() {
   return false;
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   AI
-   ═══════════════════════════════════════════════════════════════ */
 function aiDefendOrTake() {
   if (G.over || G.mode !== 'solo') return;
   if (G.attacker === 'ai') return;
@@ -2311,9 +2222,6 @@ function scheduleAIAttack() {
   }, 800);
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   КНОПКИ
-   ═══════════════════════════════════════════════════════════════ */
 btnAction.addEventListener('click', () => {
   Sound.click();
   if (G.over || G.phase !== 'playing' || G.busy) return;
@@ -2336,9 +2244,6 @@ btnSecondary.addEventListener('click', () => {
   }
 });
 
-/* ═══════════════════════════════════════════════════════════════
-   СЕТЬ — PeerJS
-   ═══════════════════════════════════════════════════════════════ */
 const NET_PREFIX = 'durak-v3-';
 
 function netSend(msg) {
@@ -2353,6 +2258,11 @@ function netApplyRemote(msg) {
 
   switch (msg.type) {
     case 'state': {
+      // На случай, если open уже прошёл, но окна остались — прячем принудительно
+      menuOverlay.classList.add('hidden');
+      hostOverlay.classList.add('hidden');
+      joinOverlay.classList.add('hidden');
+
       G.deck = msg.state.deck;
       G.trump = msg.state.trump;
       G.trumpCard = msg.state.trumpCard;
@@ -2428,6 +2338,12 @@ function netApplyRemote(msg) {
 function setupConn(conn) {
   G.conn = conn;
   conn.on('open', () => {
+    // ★ ГЛАВНОЕ ИСПРАВЛЕНИЕ: при успешном открытии соединения
+    // прячем ВСЕ стартовые окна — и у хоста, и у гостя.
+    menuOverlay.classList.add('hidden');
+    hostOverlay.classList.add('hidden');
+    joinOverlay.classList.add('hidden');
+
     netSend({ type: 'hello' });
     if (G.isHost) {
       newGame('player');
@@ -2515,9 +2431,6 @@ function startJoin(code) {
   });
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   UI-СОБЫТИЯ
-   ═══════════════════════════════════════════════════════════════ */
 $('#m-solo').addEventListener('click', () => {
   Sound.click();
   menuOverlay.classList.add('hidden');
@@ -2597,9 +2510,6 @@ function showResult(win) {
   resultOverlay.classList.remove('hidden');
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   АМБИЕНТ (только ветер)
-   ═══════════════════════════════════════════════════════════════ */
 let ambienceStarted = false;
 function startAmbience() {
   if (ambienceStarted) return;
@@ -2609,9 +2519,6 @@ function startAmbience() {
 ['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
   document.addEventListener(ev, startAmbience, { once: true, passive: true }));
 
-/* ═══════════════════════════════════════════════════════════════
-   АВТО-ВХОД по #code в URL
-   ═══════════════════════════════════════════════════════════════ */
 (function autoJoin() {
   const hash = location.hash.replace('#', '').trim();
   if (/^\d{4}$/.test(hash)) {
