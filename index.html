@@ -1483,6 +1483,7 @@ body::before {
 (() => {
 'use strict';
 
+/* ═══════════════ ЗВУК ═══════════════ */
 const Sound = (() => {
   let ctx = null, master = null, enabled = true;
 
@@ -1610,6 +1611,7 @@ const Sound = (() => {
   };
 })();
 
+/* ═══════════════ КОЛОДА ═══════════════ */
 const SUITS = ['♠', '♥', '♦', '♣'];
 const RANKS = ['6', '7', '8', '9', '10', 'В', 'Д', 'К', 'А'];
 const RED = new Set(['♥', '♦']);
@@ -1649,6 +1651,7 @@ function beats(def, atk, trump) {
   return false;
 }
 
+/* ═══════════════ СОЗДАНИЕ КАРТ ═══════════════ */
 function cardEl(card, { small = false, clickable = false } = {}) {
   const el = document.createElement('div');
   el.className = 'card ' + (isRed(card.s) ? 'red' : 'black') + (small ? ' small' : '');
@@ -1730,6 +1733,7 @@ function cardBackEl(w = 28, h = 42) {
   return el;
 }
 
+/* ═══════════════ СОСТОЯНИЕ ═══════════════ */
 const G = {
   mode: 'solo',
   mySide: 'player',
@@ -1755,6 +1759,7 @@ const defenderSide = () => (G.attacker === 'player' ? 'ai' : 'player');
 const iAmAttacker = () => G.attacker === G.mySide;
 const iAmDefender = () => G.attacker !== G.mySide;
 
+/* ═══════════════ DOM ═══════════════ */
 const $ = s => document.querySelector(s);
 const oppHandEl    = $('#opp-hand');
 const oppCountEl   = $('#opp-count');
@@ -1782,6 +1787,18 @@ function toast(msg, ms = 1800) {
   toast._t = setTimeout(() => toastEl.classList.remove('show'), ms);
 }
 
+/* ★★★ ГЛАВНОЕ ИСПРАВЛЕНИЕ ★★★
+   Функция, которая гарантированно прячет все стартовые окна.
+   Вызывается и при открытии соединения, и при получении любого
+   сетевого сообщения — это надёжно решает проблему с телефоном,
+   где conn.on('open') мог сработать раньше/позже, чем нужно. */
+function hideStartOverlays() {
+  menuOverlay.classList.add('hidden');
+  hostOverlay.classList.add('hidden');
+  joinOverlay.classList.add('hidden');
+}
+
+/* ═══════════════ ПЕРЕКРЫТИЕ В РУКЕ ═══════════════ */
 function recalcHandOverlap(count) {
   const MIN_VISIBLE = 18;
   const MAX_OVERLAP_RATIO = 0.78;
@@ -1806,7 +1823,6 @@ function recalcHandOverlap(count) {
   }
 
   let visW = (availW - cardW) / (count - 1);
-
   const minW = MIN_VISIBLE;
   const maxW = cardW * MAX_OVERLAP_RATIO;
   visW = Math.max(minW, Math.min(maxW, visW));
@@ -1825,6 +1841,7 @@ function onResize() {
 window.addEventListener('resize', onResize);
 window.addEventListener('orientationchange', onResize);
 
+/* ═══════════════ RENDER ═══════════════ */
 function render() {
   renderOpponent();
   renderTable();
@@ -1948,6 +1965,7 @@ function renderStatus() {
   }
 }
 
+/* ═══════════════ ИГРОВАЯ ЛОГИКА ═══════════════ */
 function newGame(firstAttacker = 'player') {
   G.deck = buildDeck();
   G.trumpCard = G.deck[G.deck.length - 1];
@@ -2116,6 +2134,7 @@ function checkEnd() {
   return false;
 }
 
+/* ═══════════════ AI ═══════════════ */
 function aiDefendOrTake() {
   if (G.over || G.mode !== 'solo') return;
   if (G.attacker === 'ai') return;
@@ -2222,6 +2241,7 @@ function scheduleAIAttack() {
   }, 800);
 }
 
+/* ═══════════════ КНОПКИ ═══════════════ */
 btnAction.addEventListener('click', () => {
   Sound.click();
   if (G.over || G.phase !== 'playing' || G.busy) return;
@@ -2244,6 +2264,7 @@ btnSecondary.addEventListener('click', () => {
   }
 });
 
+/* ═══════════════ СЕТЬ ═══════════════ */
 const NET_PREFIX = 'durak-v3-';
 
 function netSend(msg) {
@@ -2254,15 +2275,16 @@ function netSend(msg) {
 
 function netApplyRemote(msg) {
   if (!msg || !msg.type) return;
+
+  /* ★★★ Прячем окна при ЛЮБОМ входящем сообщении ★★★
+     Это самое надёжное место: если соединение живо и данные идут,
+     значит игра началась — окна не нужны. */
+  hideStartOverlays();
+
   const other = G.mySide === 'player' ? 'ai' : 'player';
 
   switch (msg.type) {
     case 'state': {
-      // На случай, если open уже прошёл, но окна остались — прячем принудительно
-      menuOverlay.classList.add('hidden');
-      hostOverlay.classList.add('hidden');
-      joinOverlay.classList.add('hidden');
-
       G.deck = msg.state.deck;
       G.trump = msg.state.trump;
       G.trumpCard = msg.state.trumpCard;
@@ -2337,12 +2359,10 @@ function netApplyRemote(msg) {
 
 function setupConn(conn) {
   G.conn = conn;
+
   conn.on('open', () => {
-    // ★ ГЛАВНОЕ ИСПРАВЛЕНИЕ: при успешном открытии соединения
-    // прячем ВСЕ стартовые окна — и у хоста, и у гостя.
-    menuOverlay.classList.add('hidden');
-    hostOverlay.classList.add('hidden');
-    joinOverlay.classList.add('hidden');
+    /* Прячем окна сразу при открытии соединения — и у хоста, и у гостя */
+    hideStartOverlays();
 
     netSend({ type: 'hello' });
     if (G.isHost) {
@@ -2362,6 +2382,7 @@ function setupConn(conn) {
       }, 300);
     }
   });
+
   conn.on('data', data => netApplyRemote(data));
   conn.on('close', () => toast('Соединение потеряно'));
   conn.on('error', e => console.warn(e));
@@ -2397,7 +2418,7 @@ function startHost() {
     }
   });
   G.peer.on('connection', conn => {
-    hostOverlay.classList.add('hidden');
+    hideStartOverlays();
     setupConn(conn);
   });
 }
@@ -2431,6 +2452,7 @@ function startJoin(code) {
   });
 }
 
+/* ═══════════════ UI-СОБЫТИЯ ═══════════════ */
 $('#m-solo').addEventListener('click', () => {
   Sound.click();
   menuOverlay.classList.add('hidden');
@@ -2442,6 +2464,7 @@ $('#m-solo').addEventListener('click', () => {
 });
 
 $('#m-host').addEventListener('click', () => { Sound.click(); startHost(); });
+
 $('#m-join').addEventListener('click', () => {
   Sound.click();
   menuOverlay.classList.add('hidden');
@@ -2510,6 +2533,7 @@ function showResult(win) {
   resultOverlay.classList.remove('hidden');
 }
 
+/* ═══════════════ АМБИЕНТ ═══════════════ */
 let ambienceStarted = false;
 function startAmbience() {
   if (ambienceStarted) return;
@@ -2519,6 +2543,7 @@ function startAmbience() {
 ['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
   document.addEventListener(ev, startAmbience, { once: true, passive: true }));
 
+/* ═══════════════ АВТО-ВХОД по #code ═══════════════ */
 (function autoJoin() {
   const hash = location.hash.replace('#', '').trim();
   if (/^\d{4}$/.test(hash)) {
