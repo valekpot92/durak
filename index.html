@@ -1651,6 +1651,20 @@ function beats(def, atk, trump) {
   return false;
 }
 
+/* ★ Определяет, кто ходит первым по младшему козырю.
+   Возвращает 'player' или 'ai'.
+   Если у обоих нет козырей — возвращает fallback (по умолчанию 'player'). */
+function determineFirstAttacker(handPlayer, handAI, trump, fallback = 'player') {
+  let minP = Infinity, minA = Infinity;
+  for (const c of handPlayer) if (c.s === trump && c.v < minP) minP = c.v;
+  for (const c of handAI)     if (c.s === trump && c.v < minA) minA = c.v;
+
+  if (minP === Infinity && minA === Infinity) return fallback;
+  if (minP === Infinity) return 'ai';
+  if (minA === Infinity) return 'player';
+  return minP <= minA ? 'player' : 'ai';
+}
+
 /* ═══════════════ СОЗДАНИЕ КАРТ ═══════════════ */
 function cardEl(card, { small = false, clickable = false } = {}) {
   const el = document.createElement('div');
@@ -1744,16 +1758,16 @@ const G = {
   table: [],
   attacker: 'player',
   phase: 'idle',
-  busy: false,          // блокировка только для сетевой игры
-  aiDefending: false,   // ★ AI сейчас отбивается (от одной карты)
-  aiThinking: false,    // ★ AI атакует/думает
+  busy: false,
+  aiDefending: false,
+  aiThinking: false,
   over: false,
   winner: null,
   roomCode: null,
   peer: null,
   conn: null,
   isHost: false,
-  aiTimer: null,        // ★ один активный таймер AI
+  aiTimer: null,
 };
 
 const myHand = () => G.hands[G.mySide];
@@ -1911,10 +1925,6 @@ function renderDeckAndTrump() {
   }
 }
 
-/* ★ Кнопки:
-   - Атакующий: можно подкидывать всегда, пока не закончил ход.
-     «Бито» доступно, когда все карты отбиты И AI не думает.
-   - Защитник: можно бить, когда есть неотбитые карты и AI-атакующий не думает. */
 function renderControls() {
   btnAction.disabled = true;
   btnSecondary.disabled = true;
@@ -1968,7 +1978,9 @@ function renderStatus() {
 }
 
 /* ═══════════════ ИГРОВАЯ ЛОГИКА ═══════════════ */
-function newGame(firstAttacker = 'player') {
+/* ★ newGame() больше не принимает firstAttacker — он вычисляется
+   автоматически по младшему козырю. */
+function newGame() {
   G.deck = buildDeck();
   G.trumpCard = G.deck[G.deck.length - 1];
   G.trump = G.trumpCard.s;
@@ -1978,7 +1990,8 @@ function newGame(firstAttacker = 'player') {
     G.hands.ai.push(G.deck.pop());
   }
   G.table = [];
-  G.attacker = firstAttacker;
+  /* ★ Определяем первого атакующего по младшему козырю */
+  G.attacker = determineFirstAttacker(G.hands.player, G.hands.ai, G.trump, 'player');
   G.phase = 'playing';
   G.busy = false;
   G.aiDefending = false;
@@ -1988,6 +2001,13 @@ function newGame(firstAttacker = 'player') {
   if (G.aiTimer) { clearTimeout(G.aiTimer); G.aiTimer = null; }
   Sound.shuffle();
   render();
+
+  /* ★ Сообщаем игроку, кто ходит первым */
+  const firstMsg = G.attacker === G.mySide
+    ? 'У вас младший козырь — ваш ход!'
+    : 'У соперника младший козырь — он ходит первым.';
+  setTimeout(() => toast(firstMsg, 2200), 400);
+
   if (G.mode === 'solo' && G.attacker === 'ai') scheduleAIAttack();
 }
 
@@ -2005,8 +2025,6 @@ function onMyCardClick(card) {
   if (G.over || G.phase !== 'playing') return;
 
   if (iAmAttacker()) {
-    // ★ Атакующий: можно кликать в любой момент (если AI не отбивается —
-    // всё равно можно, потому что клик — это НОВАЯ карта на подкидывание).
     if (G.table.length === 0) {
       playerAttack(card);
     } else {
@@ -2017,7 +2035,6 @@ function onMyCardClick(card) {
       playerAttack(card);
     }
   } else {
-    // ★ Защитник: блокируем только если AI думает/отбивается
     if (G.aiThinking || G.aiDefending) return;
     const undef = G.table.find(p => !p.defend);
     if (!undef) { toast('Нечего бить'); return; }
@@ -2036,7 +2053,6 @@ function canAddToTable(card) {
   return ranks.has(card.r);
 }
 
-/* ★ Атакующий кладёт карту и НЕ блокирует UI. AI отбивается в фоне. */
 function playerAttack(card) {
   removeFromHand(G.mySide, card);
   G.table.push({ attack: card, defend: null });
@@ -2052,8 +2068,6 @@ function playerAttack(card) {
   }
 }
 
-/* ★ AI-защитник: отбивает ОДНУ неотбитую карту и после этого
-   сбрасывает aiDefending, чтобы игрок мог подкидывать дальше. */
 function scheduleAIDefend() {
   if (G.mode !== 'solo') return;
   if (G.aiDefending) return;
@@ -2068,14 +2082,12 @@ function scheduleAIDefend() {
     G.aiTimer = null;
     if (G.over) { G.aiDefending = false; return; }
 
-    // Ищем неотбитую карту заново (игрок мог подкинуть ещё)
     const target = G.table.find(p => !p.defend);
     if (!target) { G.aiDefending = false; render(); return; }
 
     const candidates = G.hands.ai.filter(c => beats(c, target.attack, G.trump));
 
     if (candidates.length === 0) {
-      // AI не может отбить — берёт ВСЕ карты со стола
       const all = [];
       for (const p of G.table) {
         all.push(p.attack);
@@ -2098,7 +2110,6 @@ function scheduleAIDefend() {
       return;
     }
 
-    // AI выбирает карту: сначала нетрамповую, потом минимальную
     candidates.sort((a, b) => {
       const ta = a.s === G.trump ? 1 : 0;
       const tb = b.s === G.trump ? 1 : 0;
@@ -2112,7 +2123,6 @@ function scheduleAIDefend() {
     G.aiDefending = false;
     render();
 
-    // Если есть ещё неотбитые — отбиваем следующую
     if (G.table.some(p => !p.defend)) {
       scheduleAIDefend();
     }
@@ -2127,7 +2137,6 @@ function playerDefend(card, pair) {
   netSend({ type: 'defend', card, attack: pair.attack });
 
   if (G.mode === 'solo') {
-    // После отбива игроком AI решает, подкинуть ли ещё
     G.aiThinking = true;
     render();
     setTimeout(() => {
@@ -2324,6 +2333,12 @@ function netApplyRemote(msg) {
       G.aiDefending = false;
       G.aiThinking = false;
       render();
+
+      /* ★ Сообщаем гостю, кто ходит первым */
+      const firstMsg = G.attacker === G.mySide
+        ? 'У вас младший козырь — ваш ход!'
+        : 'У соперника младший козырь — он ходит первым.';
+      setTimeout(() => toast(firstMsg, 2200), 400);
       break;
     }
     case 'attack': {
@@ -2394,7 +2409,8 @@ function setupConn(conn) {
 
     netSend({ type: 'hello' });
     if (G.isHost) {
-      newGame('player');
+      /* ★ Хост создаёт игру — newGame сам определит первого атакующего */
+      newGame();
       setTimeout(() => {
         netSend({
           type: 'state',
@@ -2487,8 +2503,8 @@ $('#m-solo').addEventListener('click', () => {
   G.mode = 'solo';
   G.mySide = 'player';
   roleLabel.textContent = 'Игра против компьютера';
-  const first = Math.random() < 0.5 ? 'player' : 'ai';
-  newGame(first);
+  /* ★ Больше не бросаем монетку — первый ход по младшему козырю */
+  newGame();
 });
 
 $('#m-host').addEventListener('click', () => { Sound.click(); startHost(); });
@@ -2535,8 +2551,8 @@ $('#result-again').addEventListener('click', () => {
   Sound.click();
   resultOverlay.classList.add('hidden');
   if (G.mode === 'solo') {
-    const first = Math.random() < 0.5 ? 'player' : 'ai';
-    newGame(first);
+    /* ★ Снова определяем первого по младшему козырю */
+    newGame();
   } else {
     location.reload();
   }
