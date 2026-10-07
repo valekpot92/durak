@@ -1744,15 +1744,16 @@ const G = {
   table: [],
   attacker: 'player',
   phase: 'idle',
-  busy: false,
+  busy: false,          // блокировка только для сетевой игры
+  aiDefending: false,   // ★ AI сейчас отбивается (от одной карты)
+  aiThinking: false,    // ★ AI атакует/думает
   over: false,
   winner: null,
   roomCode: null,
   peer: null,
   conn: null,
   isHost: false,
-  aiDefending: false,   // ★ AI сейчас отбивается
-  pendingAI: null,      // ★ таймер отбива AI, чтобы не задваивался
+  aiTimer: null,        // ★ один активный таймер AI
 };
 
 const myHand = () => G.hands[G.mySide];
@@ -1910,26 +1911,27 @@ function renderDeckAndTrump() {
   }
 }
 
+/* ★ Кнопки:
+   - Атакующий: можно подкидывать всегда, пока не закончил ход.
+     «Бито» доступно, когда все карты отбиты И AI не думает.
+   - Защитник: можно бить, когда есть неотбитые карты и AI-атакующий не думает. */
 function renderControls() {
   btnAction.disabled = true;
   btnSecondary.disabled = true;
   if (G.over || G.phase !== 'playing') return;
 
   if (iAmAttacker()) {
-    // ★ Атакующий: всегда может кидать карты, пока AI не взял карты
-    // и пока есть карты нужного достоинства (или стол пуст).
     const allBeaten = G.table.length > 0 && G.table.every(p => p.defend);
     btnAction.textContent = G.table.length > 0 ? 'Подкинуть' : 'Ходить';
     btnAction.disabled = false;
     btnSecondary.textContent = 'Бито';
     btnSecondary.disabled = !allBeaten || G.aiDefending;
   } else {
-    // Защитник — здесь всё как раньше
     const hasUndefended = G.table.some(p => !p.defend);
     btnAction.textContent = 'Бить';
-    btnAction.disabled = !hasUndefended || G.busy;
+    btnAction.disabled = !hasUndefended || G.aiThinking || G.aiDefending;
     btnSecondary.textContent = 'Взять';
-    btnSecondary.disabled = !hasUndefended || G.busy;
+    btnSecondary.disabled = !hasUndefended || G.aiThinking || G.aiDefending;
   }
 }
 
@@ -1959,7 +1961,8 @@ function renderStatus() {
   } else {
     turnHintEl.textContent = '🛡 Соперник атакует';
     const undef = G.table.find(p => !p.defend);
-    if (undef) statusEl.textContent = 'Выберите карту, чтобы побить, или «Взять».';
+    if (G.aiThinking) statusEl.textContent = 'Соперник думает…';
+    else if (undef) statusEl.textContent = 'Выберите карту, чтобы побить, или «Взять».';
     else statusEl.textContent = 'Ждём соперника…';
   }
 }
@@ -1978,10 +1981,11 @@ function newGame(firstAttacker = 'player') {
   G.attacker = firstAttacker;
   G.phase = 'playing';
   G.busy = false;
+  G.aiDefending = false;
+  G.aiThinking = false;
   G.over = false;
   G.winner = null;
-  G.aiDefending = false;
-  if (G.pendingAI) { clearTimeout(G.pendingAI); G.pendingAI = null; }
+  if (G.aiTimer) { clearTimeout(G.aiTimer); G.aiTimer = null; }
   Sound.shuffle();
   render();
   if (G.mode === 'solo' && G.attacker === 'ai') scheduleAIAttack();
@@ -1999,9 +2003,10 @@ function addToHand(side, cards) {
 
 function onMyCardClick(card) {
   if (G.over || G.phase !== 'playing') return;
-  if (iAmDefender() && G.busy) return;
 
   if (iAmAttacker()) {
+    // ★ Атакующий: можно кликать в любой момент (если AI не отбивается —
+    // всё равно можно, потому что клик — это НОВАЯ карта на подкидывание).
     if (G.table.length === 0) {
       playerAttack(card);
     } else {
@@ -2012,6 +2017,8 @@ function onMyCardClick(card) {
       playerAttack(card);
     }
   } else {
+    // ★ Защитник: блокируем только если AI думает/отбивается
+    if (G.aiThinking || G.aiDefending) return;
     const undef = G.table.find(p => !p.defend);
     if (!undef) { toast('Нечего бить'); return; }
     if (!beats(card, undef.attack, G.trump)) { toast('Эта карта не бьёт!'); return; }
@@ -2029,7 +2036,7 @@ function canAddToTable(card) {
   return ranks.has(card.r);
 }
 
-/* ★★★ ИЗМЕНЕНО: атакующий может подкидывать без ожидания AI ★★★ */
+/* ★ Атакующий кладёт карту и НЕ блокирует UI. AI отбивается в фоне. */
 function playerAttack(card) {
   removeFromHand(G.mySide, card);
   G.table.push({ attack: card, defend: null });
@@ -2038,38 +2045,37 @@ function playerAttack(card) {
   netSend({ type: 'attack', card, side: G.mySide });
 
   if (G.mode === 'solo') {
-    // Планируем отбив AI через короткую паузу, но интерфейс НЕ блокируем.
     scheduleAIDefend();
   } else {
-    // В сети после своего хода просто ждём ответа — снимать busy будем,
-    // когда придёт 'defend'/'take'/'attack' от соперника.
     G.busy = true;
     render();
   }
 }
 
-/* ★ Планирует отбив AI от ОДНОЙ неотбитой карты. Не блокирует UI. */
+/* ★ AI-защитник: отбивает ОДНУ неотбитую карту и после этого
+   сбрасывает aiDefending, чтобы игрок мог подкидывать дальше. */
 function scheduleAIDefend() {
   if (G.mode !== 'solo') return;
-  if (G.aiDefending) return; // уже идёт отбив
+  if (G.aiDefending) return;
+
+  const undef = G.table.find(p => !p.defend);
+  if (!undef) { render(); return; }
+
   G.aiDefending = true;
   render();
 
-  G.pendingAI = setTimeout(() => {
-    G.pendingAI = null;
-    if (G.over) return;
+  G.aiTimer = setTimeout(() => {
+    G.aiTimer = null;
+    if (G.over) { G.aiDefending = false; return; }
 
-    const undef = G.table.find(p => !p.defend);
-    if (!undef) {
-      // Нечего отбивать — возможно, атакующий (игрок) ещё не нажал «Бито»
-      G.aiDefending = false;
-      render();
-      return;
-    }
+    // Ищем неотбитую карту заново (игрок мог подкинуть ещё)
+    const target = G.table.find(p => !p.defend);
+    if (!target) { G.aiDefending = false; render(); return; }
 
-    const candidates = G.hands.ai.filter(c => beats(c, undef.attack, G.trump));
+    const candidates = G.hands.ai.filter(c => beats(c, target.attack, G.trump));
+
     if (candidates.length === 0) {
-      // AI берёт все карты со стола
+      // AI не может отбить — берёт ВСЕ карты со стола
       const all = [];
       for (const p of G.table) {
         all.push(p.attack);
@@ -2082,19 +2088,17 @@ function scheduleAIDefend() {
       render();
 
       const nextAttacker = G.attacker;
-      G.busy = true;
       setTimeout(() => {
-        G.busy = false;
         refillHands();
         if (checkEnd()) return;
         G.attacker = nextAttacker;
         render();
         if (G.mode === 'solo' && G.attacker === 'ai') scheduleAIAttack();
-      }, 700);
+      }, 600);
       return;
     }
 
-    // AI выбирает карту
+    // AI выбирает карту: сначала нетрамповую, потом минимальную
     candidates.sort((a, b) => {
       const ta = a.s === G.trump ? 1 : 0;
       const tb = b.s === G.trump ? 1 : 0;
@@ -2102,13 +2106,13 @@ function scheduleAIDefend() {
       return a.v - b.v;
     });
     const card = candidates[0];
-    undef.defend = card;
+    target.defend = card;
     removeFromHand('ai', card);
     Sound.beat();
     G.aiDefending = false;
     render();
 
-    // Если остались ещё неотбитые карты — запускаем следующий отбив
+    // Если есть ещё неотбитые — отбиваем следующую
     if (G.table.some(p => !p.defend)) {
       scheduleAIDefend();
     }
@@ -2123,10 +2127,11 @@ function playerDefend(card, pair) {
   netSend({ type: 'defend', card, attack: pair.attack });
 
   if (G.mode === 'solo') {
-    G.busy = true;
+    // После отбива игроком AI решает, подкинуть ли ещё
+    G.aiThinking = true;
     render();
     setTimeout(() => {
-      G.busy = false;
+      G.aiThinking = false;
       aiAttackerDecision();
     }, 600);
   } else {
@@ -2151,6 +2156,7 @@ function playerPass() {
 
 function playerTake() {
   if (!iAmDefender()) return;
+  if (G.aiThinking) return;
   const all = [];
   for (const p of G.table) {
     all.push(p.attack);
@@ -2238,11 +2244,12 @@ function aiAttackerDecision() {
 function scheduleAIAttack() {
   if (G.over || G.mode !== 'solo') return;
   if (G.attacker !== 'ai') return;
-  G.busy = true;
+  G.aiThinking = true;
   render();
-  setTimeout(() => {
-    if (G.over || G.attacker !== 'ai') return;
-    G.busy = false;
+  G.aiTimer = setTimeout(() => {
+    G.aiTimer = null;
+    if (G.over || G.attacker !== 'ai') { G.aiThinking = false; return; }
+    G.aiThinking = false;
     if (G.hands.ai.length === 0) {
       G.attacker = 'player';
       render();
@@ -2279,7 +2286,7 @@ btnAction.addEventListener('click', () => {
 
 btnSecondary.addEventListener('click', () => {
   Sound.click();
-  if (G.over || G.phase !== 'playing' || G.busy) return;
+  if (G.over || G.phase !== 'playing') return;
   if (iAmAttacker()) {
     if (G.table.length > 0 && G.table.every(p => p.defend)) playerPass();
     else toast('Не все карты отбиты');
@@ -2315,6 +2322,7 @@ function netApplyRemote(msg) {
       G.over = false;
       G.busy = false;
       G.aiDefending = false;
+      G.aiThinking = false;
       render();
       break;
     }
