@@ -251,7 +251,6 @@
     text-shadow: 0 1px 3px #000;
   }
 
-  /* ★ Козырь — теперь ТОЛЬКО значок масти, без карты */
   #trump-slot {
     position: relative;
     width: 44px;
@@ -843,7 +842,6 @@ body::before {
   text-shadow: 0 2px 6px #000;
 }
 
-/* ★ Козырь — только значок масти */
 #trump-slot .trump-suit-badge {
   background:
     radial-gradient(circle at 50% 30%, rgba(255,200,120,.12), transparent 60%),
@@ -1662,7 +1660,6 @@ function beats(def, atk, trump) {
   return false;
 }
 
-/* Определяет, кто ходит первым по младшему козырю */
 function determineFirstAttacker(handPlayer, handAI, trump, fallback = 'player') {
   let minP = Infinity, minA = Infinity;
   for (const c of handPlayer) if (c.s === trump && c.v < minP) minP = c.v;
@@ -1784,6 +1781,8 @@ const oppHand = () => G.hands[G.mySide === 'player' ? 'ai' : 'player'];
 const defenderSide = () => (G.attacker === 'player' ? 'ai' : 'player');
 const iAmAttacker = () => G.attacker === G.mySide;
 const iAmDefender = () => G.attacker !== G.mySide;
+const defenderHand = () => G.hands[defenderSide()];
+const defenderHasCards = () => defenderHand().length > 0;
 
 /* ═══════════════ DOM ═══════════════ */
 const $ = s => document.querySelector(s);
@@ -1922,7 +1921,6 @@ function renderPlayerHand() {
   requestAnimationFrame(() => recalcHandOverlap(hand.length));
 }
 
-/* ★ Козырь: только значок масти, без карты */
 function renderDeckAndTrump() {
   deckCountEl.textContent = G.deck.length;
   trumpSlot.innerHTML = '';
@@ -1934,6 +1932,12 @@ function renderDeckAndTrump() {
   }
 }
 
+/* ★★★ Кнопки управления ★★★
+   - Атакующий: «Ходить/Подкинуть» активна всегда, пока у защитника есть карты.
+     «Бито» активна, когда все карты отбиты и AI не отбивается.
+   - Защитник: «Бить» активна если есть неотбитые и AI-атакующий не думает.
+     «Взять» — активна всегда, когда есть неотбитые карты (кроме случая,
+     когда AI-атакующий прямо сейчас думает — но даже тогда лучше разрешить). */
 function renderControls() {
   btnAction.disabled = true;
   btnSecondary.disabled = true;
@@ -1942,7 +1946,8 @@ function renderControls() {
   if (iAmAttacker()) {
     const allBeaten = G.table.length > 0 && G.table.every(p => p.defend);
     btnAction.textContent = G.table.length > 0 ? 'Подкинуть' : 'Ходить';
-    btnAction.disabled = false;
+    /* ★ Нельзя подкидывать, если у защитника закончились карты */
+    btnAction.disabled = !defenderHasCards();
     btnSecondary.textContent = 'Бито';
     btnSecondary.disabled = !allBeaten || G.aiDefending;
   } else {
@@ -1950,7 +1955,8 @@ function renderControls() {
     btnAction.textContent = 'Бить';
     btnAction.disabled = !hasUndefended || G.aiThinking || G.aiDefending;
     btnSecondary.textContent = 'Взять';
-    btnSecondary.disabled = !hasUndefended || G.aiThinking || G.aiDefending;
+    /* ★ Взять можно всегда, когда есть неотбитые карты — не блокируем */
+    btnSecondary.disabled = !hasUndefended;
   }
 }
 
@@ -1968,7 +1974,9 @@ function renderStatus() {
 
   if (iAmAttacker()) {
     turnHintEl.textContent = '⚔ Ваш ход — вы атакуете';
-    if (G.table.length === 0) {
+    if (!defenderHasCards() && G.table.length > 0) {
+      statusEl.textContent = 'У соперника закончились карты — нажмите «Бито».';
+    } else if (G.table.length === 0) {
       statusEl.textContent = 'Выберите карту, чтобы начать ход.';
     } else if (G.aiDefending) {
       statusEl.textContent = 'Соперник отбивается…';
@@ -2030,6 +2038,11 @@ function onMyCardClick(card) {
   if (G.over || G.phase !== 'playing') return;
 
   if (iAmAttacker()) {
+    /* ★ Нельзя подкидывать, если у защитника нет карт */
+    if (!defenderHasCards()) {
+      toast('У соперника нет карт — нажмите «Бито»');
+      return;
+    }
     if (G.table.length === 0) {
       playerAttack(card);
     } else {
@@ -2073,12 +2086,18 @@ function playerAttack(card) {
   }
 }
 
+/* ★ AI-защитник: отбивает ОДНУ неотбитую карту.
+   Если не может — берёт ВСЕ карты со стола. */
 function scheduleAIDefend() {
   if (G.mode !== 'solo') return;
   if (G.aiDefending) return;
 
   const undef = G.table.find(p => !p.defend);
-  if (!undef) { render(); return; }
+  if (!undef) {
+    /* Нет неотбитых — возможно, надо закончить ход */
+    tryAutoPass();
+    return;
+  }
 
   G.aiDefending = true;
   render();
@@ -2093,6 +2112,7 @@ function scheduleAIDefend() {
     const candidates = G.hands.ai.filter(c => beats(c, target.attack, G.trump));
 
     if (candidates.length === 0) {
+      /* ★ AI не может отбиться — берёт ВСЕ карты со стола */
       const all = [];
       for (const p of G.table) {
         all.push(p.attack);
@@ -2104,6 +2124,7 @@ function scheduleAIDefend() {
       G.aiDefending = false;
       render();
 
+      /* После того как AI взял — ход переходит к игроку (он был атакующим) */
       const nextAttacker = G.attacker;
       setTimeout(() => {
         refillHands();
@@ -2130,8 +2151,22 @@ function scheduleAIDefend() {
 
     if (G.table.some(p => !p.defend)) {
       scheduleAIDefend();
+    } else {
+      /* ★ Все карты отбиты. Если у AI пусто — он не может больше защищаться,
+         ничего не делаем — игрок сам нажмёт «Бито». */
     }
   }, 550);
+}
+
+/* ★ Автоматически завершаем ход игрока, если у AI-защитника нет карт,
+   а все карты на столе отбиты — значит, игрок не может больше подкидывать. */
+function tryAutoPass() {
+  if (!iAmAttacker()) return;
+  if (G.table.length === 0) return;
+  if (!G.table.every(p => p.defend)) return;
+  if (defenderHasCards()) return; // у AI ещё есть карты — пусть игрок решает
+  /* AI без карт — ход автоматически завершается */
+  setTimeout(() => playerPass(), 500);
 }
 
 function playerDefend(card, pair) {
@@ -2170,7 +2205,7 @@ function playerPass() {
 
 function playerTake() {
   if (!iAmDefender()) return;
-  if (G.aiThinking) return;
+  /* ★ Разрешаем взять всегда, когда есть неотбитые карты */
   const all = [];
   for (const p of G.table) {
     all.push(p.attack);
@@ -2228,6 +2263,18 @@ function aiAttackerDecision() {
   if (G.over || G.mode !== 'solo') return;
   if (G.attacker !== 'ai') return;
   if (!G.table.every(p => p.defend)) return;
+
+  /* ★ AI не может подкидывать, если у игрока-защитника нет карт */
+  if (!defenderHasCards()) {
+    /* У игрока пусто — AI завершает ход */
+    Sound.play();
+    G.table = [];
+    refillHands();
+    if (checkEnd()) return;
+    G.attacker = 'player';
+    render();
+    return;
+  }
 
   const ranks = new Set();
   for (const p of G.table) {
@@ -2291,7 +2338,8 @@ btnAction.addEventListener('click', () => {
   Sound.click();
   if (G.over || G.phase !== 'playing') return;
   if (iAmAttacker()) {
-    if (G.table.length === 0) toast('Выберите карту для атаки');
+    if (!defenderHasCards()) toast('У соперника нет карт — нажмите «Бито»');
+    else if (G.table.length === 0) toast('Выберите карту для атаки');
     else toast('Выберите карту того же достоинства для подкидывания');
   } else {
     toast('Выберите карту для защиты');
